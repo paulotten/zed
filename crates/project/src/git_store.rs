@@ -1,3 +1,4 @@
+pub mod branch_diff;
 mod conflict_set;
 pub mod git_traversal;
 
@@ -268,7 +269,6 @@ pub struct Repository {
     askpass_delegates: Arc<Mutex<HashMap<u64, AskPassDelegate>>>,
     latest_askpass_id: u64,
 }
-
 impl std::ops::Deref for Repository {
     type Target = RepositorySnapshot;
 
