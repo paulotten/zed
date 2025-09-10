@@ -137,11 +137,14 @@ impl GitRepository for FakeGitRepository {
         None
     }
 
-    fn revparse_batch(&self, revs: Vec<String>) -> BoxFuture<'_, Result<Vec<Option<String>>>> {
+    fn revparse_batch(
+        &self,
+        revs: Vec<SharedString>,
+    ) -> BoxFuture<'_, Result<Vec<Option<String>>>> {
         self.with_state_async(false, |state| {
             Ok(revs
                 .into_iter()
-                .map(|rev| state.refs.get(&rev).cloned())
+                .map(|rev| state.refs.get(&rev.to_string()).cloned())
                 .collect())
         })
     }

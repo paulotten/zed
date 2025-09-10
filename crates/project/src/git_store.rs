@@ -4078,6 +4078,37 @@ impl Repository {
         })
     }
 
+    pub fn merge_base(
+        &mut self,
+        branch_a: SharedString,
+        branch_b: SharedString,
+    ) -> oneshot::Receiver<Result<Option<String>>> {
+        let id = self.id;
+        self.send_job(None, move |repo, _| async move {
+            match repo {
+                RepositoryState::Local { backend, .. } => backend.merge_base(input).await,
+                RepositoryState::Remote { project_id, client } => {
+                    todo!()
+                    // let response = client
+                    //     .request(proto::GitRevParse {
+                    //         project_id: project_id.0,
+                    //         repository_id: id.to_proto(),
+                    //         input: input.into_iter().map(|s| s.into()).collect(),
+                    //     })
+                    //     .await?;
+
+                    // let branches = response
+                    //     .branches
+                    //     .into_iter()
+                    //     .map(|branch| proto_to_branch(&branch))
+                    //     .collect();
+
+                    // Ok(branches)
+                }
+            }
+        })
+    }
+
     pub fn diff(&mut self, diff_type: DiffType, _cx: &App) -> oneshot::Receiver<Result<String>> {
         let id = self.id;
         self.send_job(None, move |repo, _cx| async move {

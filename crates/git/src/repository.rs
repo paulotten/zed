@@ -321,7 +321,15 @@ pub trait GitRepository: Send + Sync {
     fn remote_url(&self, name: &str) -> Option<String>;
 
     /// Resolve a list of refs to SHAs.
-    fn revparse_batch(&self, revs: Vec<String>) -> BoxFuture<'_, Result<Vec<Option<String>>>>;
+    fn revparse_batch(&self, revs: Vec<SharedString>)
+    -> BoxFuture<'_, Result<Vec<Option<String>>>>;
+
+    /// Resolve a list of refs to SHAs.
+    fn merge_base(
+        &self,
+        branch_a: SharedString,
+        branch_b: SharedString,
+    ) -> BoxFuture<'_, Result<Option<SharedString>>>;
 
     fn head_sha(&self) -> BoxFuture<'_, Option<String>> {
         async move {
@@ -894,7 +902,29 @@ impl GitRepository for RealGitRepository {
         remote.url().map(|url| url.to_string())
     }
 
-    fn revparse_batch(&self, revs: Vec<String>) -> BoxFuture<'_, Result<Vec<Option<String>>>> {
+    fn merge_base(
+        &self,
+        branch_a: SharedString,
+        branch_b: SharedString,
+    ) -> BoxFuture<'_, Result<Option<SharedString>>> {
+        let git_binary_path = self.git_binary_path.clone();
+        let working_directory = self.working_directory();
+        let executor = self.executor.clone();
+        self.executor
+            .spawn(async move {
+                let output = GitBinary::new(git_binary_path, working_directory?, executor)
+                    .run(&["merge-base", &branch_a, &branch_b])
+                    .await?;
+
+                Ok(Some("".into()))
+            })
+            .boxed()
+    }
+
+    fn revparse_batch(
+        &self,
+        revs: Vec<SharedString>,
+    ) -> BoxFuture<'_, Result<Vec<Option<String>>>> {
         let working_directory = self.working_directory();
         self.executor
             .spawn(async move {
