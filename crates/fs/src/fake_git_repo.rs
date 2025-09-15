@@ -137,6 +137,14 @@ impl GitRepository for FakeGitRepository {
         None
     }
 
+    fn merge_base(
+        &self,
+        _branch_a: SharedString,
+        _branch_b: SharedString,
+    ) -> BoxFuture<'_, Result<SharedString>> {
+        unimplemented!()
+    }
+
     fn revparse_batch(
         &self,
         revs: Vec<SharedString>,

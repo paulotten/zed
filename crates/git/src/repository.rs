@@ -175,6 +175,12 @@ pub struct CommitFile {
     pub new_text: Option<String>,
 }
 
+#[derive(Debug)]
+pub struct FileStatus {
+    pub path: RepoPath,
+    pub status: StatusCode,
+}
+
 impl CommitDetails {
     pub fn short_sha(&self) -> SharedString {
         self.sha[..SHORT_SHA_LENGTH].to_string().into()
@@ -238,6 +244,11 @@ pub struct GitExcludeOverride {
     git_exclude_path: PathBuf,
     original_excludes: Option<String>,
     added_excludes: Option<String>,
+}
+
+pub struct CommittedFile {
+    commit: SharedString,
+    path: RepoPath,
 }
 
 impl GitExcludeOverride {
@@ -329,7 +340,7 @@ pub trait GitRepository: Send + Sync {
         &self,
         branch_a: SharedString,
         branch_b: SharedString,
-    ) -> BoxFuture<'_, Result<Option<SharedString>>>;
+    ) -> BoxFuture<'_, Result<SharedString>>;
 
     fn head_sha(&self) -> BoxFuture<'_, Option<String>> {
         async move {
@@ -369,6 +380,14 @@ pub trait GitRepository: Send + Sync {
     fn show(&self, commit: String) -> BoxFuture<'_, Result<CommitDetails>>;
 
     fn load_commit(&self, commit: String, cx: AsyncApp) -> BoxFuture<'_, Result<CommitDiff>>;
+    fn load_diff(
+        &self,
+        from: SharedString,
+        to: SharedString,
+        cx: AsyncApp,
+    ) -> Task<Result<Vec<FileStatus>>>;
+    fn batch_file_content(&self, versions: Vec<CommittedFile>) -> Task<Result<Vec<String>>>;
+
     fn blame(&self, path: RepoPath, content: Rope) -> BoxFuture<'_, Result<crate::blame::Blame>>;
 
     /// Returns the absolute path to the repository. For worktrees, this will be the path to the
@@ -725,6 +744,45 @@ impl GitRepository for RealGitRepository {
         .boxed()
     }
 
+    fn load_diff(
+        &self,
+        from: SharedString,
+        to: SharedString,
+        cx: AsyncApp,
+    ) -> Task<Result<Vec<FileStatus>>> {
+        let git_binary_path = self.git_binary_path.clone();
+        let working_directory = self.working_directory();
+        let executor = self.executor.clone();
+        cx.background_spawn(async move {
+            let working_directory = working_directory?;
+            let output =
+                GitBinary::new(git_binary_path.clone(), working_directory.clone(), executor)
+                    .run_raw([
+                        "--no-optional-locks",
+                        "diff",
+                        "--format=%P",
+                        "-z",
+                        "--no-renames",
+                        "--name-status",
+                        &from,
+                        &to,
+                    ])
+                    .await?;
+
+            let changes = parse_git_diff_name_status(&output);
+
+            let changed_files = changes
+                .into_iter()
+                .map(|(path, status)| FileStatus {
+                    path: path.into(),
+                    status,
+                })
+                .collect();
+
+            Ok(changed_files)
+        })
+    }
+
     fn reset(
         &self,
         commit: String,
@@ -906,7 +964,7 @@ impl GitRepository for RealGitRepository {
         &self,
         branch_a: SharedString,
         branch_b: SharedString,
-    ) -> BoxFuture<'_, Result<Option<SharedString>>> {
+    ) -> BoxFuture<'_, Result<SharedString>> {
         let git_binary_path = self.git_binary_path.clone();
         let working_directory = self.working_directory();
         let executor = self.executor.clone();
@@ -916,7 +974,11 @@ impl GitRepository for RealGitRepository {
                     .run(&["merge-base", &branch_a, &branch_b])
                     .await?;
 
-                Ok(Some("".into()))
+                if output.is_empty() {
+                    Err(anyhow!("no common ancestors"))
+                } else {
+                    Ok(output.into())
+                }
             })
             .boxed()
     }
